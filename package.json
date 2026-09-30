@@ -1,0 +1,15 @@
+{
+  "name": "spend-guard",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "tsc && bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "7.0.2"
+  },
+  "license": "MIT"
+}

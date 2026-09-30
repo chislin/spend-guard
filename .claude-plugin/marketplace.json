@@ -1,0 +1,14 @@
+{
+  "name": "spend-guard",
+  "description": "Marketplace for the spend-guard plugin.",
+  "owner": {
+    "name": "Vladislav Chislin"
+  },
+  "plugins": [
+    {
+      "name": "spend-guard",
+      "source": "./",
+      "description": "Stops a Claude Code session just before a reply would bill usage credits, until you send /spend-guard off."
+    }
+  ]
+}

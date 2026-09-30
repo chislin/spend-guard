@@ -1,0 +1,56 @@
+{
+  "name": "spend-guard",
+  "version": "1.1.0",
+  "description": "Stops a Claude Code session just before a reply would bill usage credits, until you send /spend-guard off.",
+  "author": {
+    "name": "Vladislav Chislin"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/src/main.ts\" hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/src/main.ts\" hook || { echo \"spend-guard could not run its hook and stopped to be safe. Check that bun is on your PATH, or run: claude plugin disable spend-guard\" >&2; exit 2; }",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/src/main.ts\" hook || { echo \"spend-guard could not run its hook and stopped to be safe. Check that bun is on your PATH, or run: claude plugin disable spend-guard\" >&2; exit 2; }",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/src/main.ts\" hook || { echo \"spend-guard could not run its hook and stopped to be safe. Check that bun is on your PATH, or run: claude plugin disable spend-guard\" >&2; exit 2; }",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="spend-guard">
+  <title>spend-guard</title>
+  <!-- Gauge track: three quarters of a circle, open at the bottom. -->
+  <path d="M 32.9 95.1 A 44 44 0 1 1 95.1 95.1" fill="none" stroke="#94a3b8" stroke-opacity="0.35" stroke-width="12" stroke-linecap="round"/>
+  <!-- Usage so far. -->
+  <path d="M 32.9 95.1 A 44 44 0 1 1 107.9 67.5" fill="none" stroke="#f59e0b" stroke-width="12" stroke-linecap="round"/>
+  <!-- The guard: where the next reply is stopped. -->
+  <line x1="97.9" y1="66.7" x2="117.8" y2="68.2" stroke="#64748b" stroke-width="6" stroke-linecap="round"/>
+</svg>
