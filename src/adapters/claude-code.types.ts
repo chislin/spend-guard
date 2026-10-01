@@ -15,6 +15,9 @@ export interface HookInput {
     // UserPromptExpansion: the user typed `/<command_name> <command_args>`.
     command_name?: string;
     command_args?: string;
+    // PreToolUse: the tool about to run and its input; a Bash call carries its command line.
+    tool_name?: string;
+    tool_input?: { command?: unknown; [otherField: string]: unknown };
 }
 
 // What Claude Code sends the status line.

@@ -94,8 +94,10 @@ spend-guard lowers the chance of billing usage credits. It cannot rule it out.
 
 ## Uninstall
 
-1. Run `/spend-guard:restore`. It puts your original status line command back and removes the `/spend-guard` command.
+1. Run `/spend-guard:restore`. It puts your original status line command back and removes the `/spend-guard` command. The guard never stops its own setup or restore, whatever the usage.
 2. `claude plugin uninstall spend-guard@spend-guard`
+
+To stop the hooks without a Claude session, run `claude plugin disable spend-guard` in a terminal and restart your sessions.
 
 If you uninstall without restoring, your original status line still works: the wrapping command falls back to it once the plugin's files are gone. Edit `statusLine.command` in your user settings to tidy up.
 

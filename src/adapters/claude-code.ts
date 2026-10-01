@@ -140,7 +140,7 @@ export class ClaudeCodeAdapter {
             case HookEvent.UserPromptExpansion:
                 return this.answerCommand(event.session_id, event.command_name, event.command_args ?? '');
             case HookEvent.PreToolUse:
-                return this.checkToolCall(event.session_id);
+                return runsOwnCommand(event) ? PASS : this.checkToolCall(event.session_id);
             default:
                 throw new Error(`unknown hook event ${event.hook_event_name}`);
         }
@@ -272,6 +272,14 @@ export class ClaudeCodeAdapter {
         }
         return stopTurn([refusal(turn), await this.probeLineForRefusal()].filter((line) => line !== '').join('\n'));
     }
+}
+
+// The plugin's own setup and restore run through a Bash tool call, and must never be stopped by the guard itself:
+// a user at the limit still has to be able to take the plugin out.
+const OWN_COMMAND = /main\.ts["']?\s+(setup|restore)\b/;
+
+function runsOwnCommand(event: HookInput): boolean {
+    return event.tool_name === 'Bash' && typeof event.tool_input?.command === 'string' && OWN_COMMAND.test(event.tool_input.command);
 }
 
 const COMMAND_MODES: Record<string, GuardMode | undefined> = {

@@ -470,6 +470,19 @@ describe('failures', () => {
         expect(hook(box, HookEvent.PreToolUse, 's1').continue).toBe(false);
     });
 
+    test("the plugin's own setup and restore are never stopped, whatever the usage", () => {
+        const box = sandbox();
+        reportFiveHour(box, 60, 76, 99);
+        expect(hook(box, HookEvent.PreToolUse, 's1').continue).toBe(false);
+        for (const entry of [EntryPoint.Restore, EntryPoint.Setup]) {
+            const command = `CLAUDE_PLUGIN_DATA="x" bun "/plugins/spend-guard/src/main.ts" ${entry}`;
+            const event = { session_id: 's1', hook_event_name: HookEvent.PreToolUse, tool_name: 'Bash', tool_input: { command } };
+            expect(run(box, EntryPoint.Hook, event)).toBe('');
+        }
+        const other = { session_id: 's1', hook_event_name: HookEvent.PreToolUse, tool_name: 'Bash', tool_input: { command: 'bun main.ts hook' } };
+        expect(JSON.parse(run(box, EntryPoint.Hook, other)).continue).toBe(false);
+    });
+
     test('a database of the previous build keeps its data and gains the new table', () => {
         const box = sandbox();
         reportFiveHour(box, 99);
