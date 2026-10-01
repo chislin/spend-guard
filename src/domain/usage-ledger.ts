@@ -18,6 +18,11 @@ export class UsageLedger {
         return [...this.records.values()];
     }
 
+    // Two readings of the same window, allowing for a reset time that wobbles.
+    static sameWindow(a: UsageReading, b: UsageReading): boolean {
+        return a.window === b.window && Math.abs(a.resetsAtSeconds - b.resetsAtSeconds) <= RESET_JITTER_SECONDS;
+    }
+
     // A reading older than the stored one never lowers it: idle sessions keep re-sending stale gauges.
     record(reading: UsageReading): void {
         const stored = this.records.get(reading.window);
@@ -25,7 +30,7 @@ export class UsageLedger {
             this.records.set(reading.window, { ...reading, recentRises: [] });
             return;
         }
-        const sameWindow = Math.abs(reading.resetsAtSeconds - stored.resetsAtSeconds) <= RESET_JITTER_SECONDS;
+        const sameWindow = UsageLedger.sameWindow(reading, stored);
         if (!sameWindow) {
             if (reading.resetsAtSeconds > stored.resetsAtSeconds) {
                 this.records.set(reading.window, { ...reading, recentRises: stored.recentRises });
@@ -37,6 +42,13 @@ export class UsageLedger {
         }
         const rise = reading.percentUsed - stored.percentUsed;
         const recentRises = [...stored.recentRises, rise].slice(-RISES_KEPT);
+        this.records.set(reading.window, { ...reading, recentRises });
+    }
+
+    // Takes the reading as the truth for its window, however low: the account's usage was seen to drop.
+    replace(reading: UsageReading): void {
+        const stored = this.records.get(reading.window);
+        const recentRises = stored && UsageLedger.sameWindow(reading, stored) ? stored.recentRises : [];
         this.records.set(reading.window, { ...reading, recentRises });
     }
 

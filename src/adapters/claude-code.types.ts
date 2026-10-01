@@ -9,6 +9,8 @@ export enum HookEvent {
 export interface HookInput {
     session_id: string;
     hook_event_name: HookEvent;
+    // The project folder the session runs in; Claude Code keeps its scheduled prompts there.
+    cwd?: string;
     prompt?: string;
     // UserPromptExpansion: the user typed `/<command_name> <command_args>`.
     command_name?: string;
@@ -31,16 +33,18 @@ export interface RateLimitWindow {
 // A hook's stdout: one of the JSON shapes below, or empty to let the event through.
 export type HookAnswer = string;
 
-export interface PromptBlock {
+// A warning Claude Code shows the user. It is the one hook output a Remote Control device receives, so every
+// refusal carries its text here as well: the block reason and the stop reason stay in the terminal.
+export interface Notice {
+    systemMessage: string;
+}
+
+export interface PromptBlock extends Notice {
     decision: 'block';
     reason: string;
 }
 
-export interface TurnStop {
+export interface TurnStop extends Notice {
     continue: false;
     stopReason: string;
-}
-
-export interface Notice {
-    systemMessage: string;
 }

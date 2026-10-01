@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SpendGuard } from '../src/domain/spend-guard.ts';
+import { PROBE_INTERVAL_SECONDS, PROBE_TIMEOUT_SECONDS, SpendGuard } from '../src/domain/spend-guard.ts';
 import { GuardMode, UsageWindow, Verdict } from '../src/domain/types.ts';
 import { MemoryGuardRepository } from './memory-guard-repository.ts';
 
@@ -28,6 +28,60 @@ describe('SpendGuard', () => {
         });
     });
 
+    test('a refusal says whether the prompt is to be sent again, off until set for every session', async () => {
+        const guard = await guardWithFiveHourReadings(60, 76, 92);
+        expect(await guard.verdictFor('s1')).toMatchObject({ verdict: Verdict.Refuse, resendBlocked: false });
+        expect((await guard.setResendBlocked('s1', true)).resendBlocked).toBe(true);
+        expect(await guard.verdictFor('s2')).toMatchObject({ verdict: Verdict.Refuse, resendBlocked: true });
+        expect((await guard.status('s2')).resendBlocked).toBe(true);
+    });
+
+    test('a session whose own gauge fell replaces the ledger, keeping the measured rises', async () => {
+        const guard = await guardWithFiveHourReadings(60, 76, 92);
+        await guard.recordReadings('s2', [{ window: UsageWindow.FiveHour, percentUsed: 30, resetsAtSeconds: WINDOW_RESET }]);
+        expect((await guard.verdictFor('s1')).verdict).toBe(Verdict.Refuse);
+        await guard.recordReadings('s1', [{ window: UsageWindow.FiveHour, percentUsed: 30, resetsAtSeconds: WINDOW_RESET }]);
+        expect(await guard.verdictFor('s1')).toEqual({ verdict: Verdict.Proceed });
+        expect((await guard.status('s1')).gauges[0]).toMatchObject({ percentUsed: 30, typicalRise: 16 });
+    });
+
+    test('forgetting usage empties the ledger and the next reading refills it', async () => {
+        const guard = await guardWithFiveHourReadings(60, 76, 92);
+        expect((await guard.forgetUsage('s1')).gauges).toEqual([]);
+        expect(await guard.verdictFor('s1')).toEqual({ verdict: Verdict.Proceed });
+        await guard.recordReadings('s1', [{ window: UsageWindow.FiveHour, percentUsed: 99, resetsAtSeconds: WINDOW_RESET }]);
+        expect((await guard.verdictFor('s1')).verdict).toBe(Verdict.Refuse);
+    });
+
+    test('a ping is claimed once per interval, never while one runs, and at once when forced', async () => {
+        let now = NOW;
+        const guard = new SpendGuard(new MemoryGuardRepository(), () => now);
+        expect(await guard.claimProbe()).toBe(true);
+        expect(await guard.claimProbe()).toBe(false);
+        expect(await guard.claimProbe(true)).toBe(false);
+        await guard.recordProbe({ failure: 'no answer' });
+        expect(await guard.claimProbe()).toBe(false);
+        expect(await guard.claimProbe(true)).toBe(true);
+        now = NOW + PROBE_TIMEOUT_SECONDS - 1;
+        expect(await guard.claimProbe(true)).toBe(false);
+        now = NOW + PROBE_TIMEOUT_SECONDS;
+        expect(await guard.claimProbe()).toBe(true);
+        await guard.recordProbe({ failure: 'no answer' });
+        now = NOW + PROBE_TIMEOUT_SECONDS + PROBE_INTERVAL_SECONDS - 1;
+        expect(await guard.claimProbe()).toBe(false);
+        now = NOW + PROBE_TIMEOUT_SECONDS + PROBE_INTERVAL_SECONDS;
+        expect(await guard.claimProbe()).toBe(true);
+    });
+
+    test("a ping's gauges replace the ledger, keeping the measured rises", async () => {
+        const guard = await guardWithFiveHourReadings(60, 76, 92);
+        expect((await guard.verdictFor('s1')).verdict).toBe(Verdict.Refuse);
+        await guard.recordProbe({ readings: [{ window: UsageWindow.FiveHour, percentUsed: 3, resetsAtSeconds: WINDOW_RESET }] });
+        expect(await guard.verdictFor('s1')).toEqual({ verdict: Verdict.Proceed });
+        expect((await guard.status('s1')).gauges[0]).toMatchObject({ percentUsed: 3, typicalRise: 16 });
+        expect((await guard.status('s1')).lastProbe).toEqual({ startedAtSeconds: NOW, finishedAtSeconds: NOW, failure: undefined });
+    });
+
     test('assumes the default rise before measured rises agree on more', async () => {
         expect((await (await guardWithFiveHourReadings(97)).verdictFor('s1')).verdict).toBe(Verdict.Proceed);
         expect((await (await guardWithFiveHourReadings(98)).verdictFor('s1')).verdict).toBe(Verdict.Refuse);
@@ -45,7 +99,9 @@ describe('SpendGuard', () => {
     });
 
     test('a stale reading from an idle session never lowers the gauge', async () => {
-        const guard = await guardWithFiveHourReadings(60, 76, 92, 40);
+        const guard = await guardWithFiveHourReadings(60, 76, 92);
+        await guard.recordReadings('idle', [{ window: UsageWindow.FiveHour, percentUsed: 40, resetsAtSeconds: WINDOW_RESET }]);
+        await guard.recordReadings('idle', [{ window: UsageWindow.FiveHour, percentUsed: 40, resetsAtSeconds: WINDOW_RESET }]);
         expect((await guard.status('s1')).gauges[0]).toMatchObject({ percentUsed: 92, typicalRise: 16 });
     });
 

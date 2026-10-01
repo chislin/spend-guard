@@ -1,5 +1,9 @@
 // Every sentence the user reads from spend-guard.
-import { GuardMode, UsageWindow, Verdict, type GuardStatus, type TurnVerdict, type WindowGauge } from '../domain/types.ts';
+import { GuardMode, UsageWindow, type GuardStatus, type ProbeRecord, type RefusedTurn, type WindowGauge } from '../domain/types.ts';
+import { PROBE_TIMEOUT_SECONDS } from '../domain/spend-guard.ts';
+import { PING_MODEL } from '../infrastructure/usage-ping.ts';
+import { RESEND_LIMIT } from '../infrastructure/scheduled-tasks-file.ts';
+import { ResendResult, type ResendOutcome } from '../infrastructure/scheduled-tasks-file.types.ts';
 
 // The user command `/spend-guard <argument>`. The hook answers it before it expands, so it never reaches Claude.
 export const COMMAND_NAME = 'spend-guard';
@@ -7,6 +11,12 @@ export const COMMAND_NAME = 'spend-guard';
 export enum SpendCommand {
     On = 'on',
     Off = 'off',
+    // `resend on` or `resend off`: whether a refused prompt is sent again after the reset.
+    Resend = 'resend',
+    // Forgets the recorded usage, for a reset the guard did not see.
+    Reset = 'reset',
+    // Starts a usage ping now.
+    Check = 'check',
     Status = '',
 }
 
@@ -19,6 +29,9 @@ export function commandUsage(): string {
     return [
         `spend-guard: send ${name} ${SpendCommand.On} or ${name} ${SpendCommand.Off} for this session,`,
         `${name} ${SpendCommand.On} ${ALL_SESSIONS} or ${name} ${SpendCommand.Off} ${ALL_SESSIONS} for every session,`,
+        `${name} ${SpendCommand.Resend} ${SpendCommand.On} or ${name} ${SpendCommand.Resend} ${SpendCommand.Off} to send blocked prompts again after the reset,`,
+        `${name} ${SpendCommand.Check} to learn the live usage with a one-word ${PING_MODEL} reply,`,
+        `${name} ${SpendCommand.Reset} to forget the recorded usage after a reset it did not see,`,
         `or ${name} alone to see usage.`,
     ].join('\n');
 }
@@ -26,7 +39,7 @@ export function commandUsage(): string {
 // What the user command expands to when the hook did not answer it, which means the plugin is not running.
 export const COMMAND_FILE_TEXT = [
     '---',
-    'description: Turn spend-guard on or off for this session or for all, or see usage. Answered by spend-guard, never reaches Claude.',
+    'description: Turn spend-guard on or off for this session or for all, resend blocked prompts after the reset, check or forget recorded usage, or see usage. Answered by spend-guard, never reaches Claude.',
     '---',
     'spend-guard did not answer this command, so its hooks are not running. Tell the user, in plain words:',
     'the plugin is disabled or uninstalled; run `claude plugin enable spend-guard` to bring it back,',
@@ -100,11 +113,51 @@ export function nothingToRestore(currentCommand: string | undefined): string {
     return ['Nothing to restore. spend-guard is not set up.', `Status line command now: ${currentCommand ?? NO_COMMAND}`].join('\n');
 }
 
-// The message for a session that may not start more work; undefined when it may.
-export function refusal(turn: TurnVerdict): string | undefined {
-    if (turn.verdict === Verdict.Proceed) {
-        return undefined;
+export const PROBE_STARTED = `Checking the live usage with a one-word ${PING_MODEL} reply, which costs a little usage. Send your prompt again in a few seconds.`;
+
+const CHECK_YOURSELF = `spend-guard cannot see a reset that comes before the time it recorded. Run /usage yourself; if the limit has reset, send /${COMMAND_NAME} ${SpendCommand.Check} or /${COMMAND_NAME} ${SpendCommand.Reset}.`;
+
+// What the last usage ping gave; nothing when there never was one.
+export function probeLine(probe: ProbeRecord | undefined, nowSeconds: number): string {
+    if (probe === undefined) {
+        return '';
     }
+    if (probe.finishedAtSeconds === undefined) {
+        if (nowSeconds - probe.startedAtSeconds < PROBE_TIMEOUT_SECONDS) {
+            return 'A live usage check is running. Send your prompt again in a few seconds.';
+        }
+        return `The live usage check started at ${formatTime(probe.startedAtSeconds, UsageWindow.FiveHour)} never reported back. ${CHECK_YOURSELF}`;
+    }
+    const at = formatTime(probe.finishedAtSeconds, UsageWindow.FiveHour);
+    if (probe.failure === undefined) {
+        return `Live usage checked at ${at}.`;
+    }
+    return `Could not check the live usage at ${at} (${probe.failure}). ${CHECK_YOURSELF}`;
+}
+
+export const USAGE_FORGOTTEN =
+    'spend-guard forgot the recorded usage. Work goes on, and the next reply brings fresh gauges. If the limit did not reset, that reply may bill usage credits.';
+
+export const RESEND_HINT = `Send /${COMMAND_NAME} ${SpendCommand.Resend} ${SpendCommand.On} to have blocked prompts sent again after the reset.`;
+
+export function couldNotSchedule(cause: string): string {
+    return `The prompt could not be scheduled to be sent again (${cause}). Send it again after the reset.`;
+}
+
+// What became of a refused prompt that was to be sent again.
+export function resendOutcome(outcome: ResendOutcome, window: UsageWindow): string {
+    switch (outcome.result) {
+        case ResendResult.Scheduled:
+            return `Your prompt is scheduled to be sent again at ${formatTime(outcome.atSeconds, window)} in this session, if it is still open then.`;
+        case ResendResult.AlreadyScheduled:
+            return `This prompt is already scheduled to be sent again at ${formatTime(outcome.atSeconds, window)}.`;
+        case ResendResult.LimitReached:
+            return `${RESEND_LIMIT} prompts are already scheduled to be sent again, so this one is not. Send it again after the reset.`;
+    }
+}
+
+// The message for a session that may not start more work.
+export function refusal(turn: RefusedTurn): string {
     const { gauge, activeSessions } = turn;
     const sessions = activeSessions > 1 ? `, ${activeSessions} sessions active` : '';
     return [
@@ -114,14 +167,15 @@ export function refusal(turn: TurnVerdict): string | undefined {
 }
 
 // wrapped: the user's settings run the guard's status line.
-export function describeStatus(status: GuardStatus, wrapped: boolean): string {
+export function describeStatus(status: GuardStatus, wrapped: boolean, nowSeconds = Date.now() / 1000): string {
     const reporting = status.statusLineSeenAtSeconds !== undefined;
-    const lines = [modeLine(status)];
+    const lines = [modeLine(status), resendLine(status)];
     if (!wrapped) {
         lines.push(NOT_CONNECTED);
     } else if (!reporting) {
         lines.push(NOT_REPORTING);
     }
+    lines.push(probeLine(status.lastProbe, nowSeconds));
     for (const window of Object.values(UsageWindow)) {
         const gauge = status.gauges.find((liveGauge) => liveGauge.window === window);
         if (gauge) {
@@ -132,7 +186,7 @@ export function describeStatus(status: GuardStatus, wrapped: boolean): string {
             lines.push(`${WINDOW_LABELS[window]}: no data yet, arrives with Claude's next reply`);
         }
     }
-    return lines.join('\n');
+    return lines.filter((line) => line !== '').join('\n');
 }
 
 // At most one decimal, so a measured 0.30000000000001137 reads as 0.3%.
@@ -140,6 +194,17 @@ function percent(value: number): string {
     return `${Number(value.toFixed(1))}%`;
 }
 
+function resendLine(status: GuardStatus): string {
+    if (status.resendBlocked) {
+        return `Blocked prompts are sent again after the reset. Send /${COMMAND_NAME} ${SpendCommand.Resend} ${SpendCommand.Off} to stop that.`;
+    }
+    return `Blocked prompts are not sent again. ${RESEND_HINT}`;
+}
+
+function formatTime(seconds: number, window: UsageWindow): string {
+    return new Date(seconds * 1000).toLocaleString(undefined, RESET_TIME_FORMATS[window]);
+}
+
 function resetTime(gauge: WindowGauge): string {
-    return new Date(gauge.resetsAtSeconds * 1000).toLocaleString(undefined, RESET_TIME_FORMATS[gauge.window]);
+    return formatTime(gauge.resetsAtSeconds, gauge.window);
 }
