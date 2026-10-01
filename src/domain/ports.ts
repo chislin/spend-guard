@@ -1,5 +1,5 @@
 import type { UsageLedger } from './usage-ledger.ts';
-import type { GuardMode, SessionState } from './types.ts';
+import type { GuardMode, ProbeRecord, SessionState, UsageProbe } from './types.ts';
 
 // Everything the guard remembers, as seen inside one transaction. A session never saved has no mode of its own and was never seen.
 export interface GuardState {
@@ -13,6 +13,17 @@ export interface GuardState {
     saveModeForAllSessions(mode: GuardMode): void;
     // Drops every session's own choice, so the setting for all sessions is in force everywhere.
     forgetSessionModes(): void;
+    // Whether a refused prompt is scheduled to be sent again after the reset; off until set.
+    resendBlocked(): boolean;
+    saveResendBlocked(on: boolean): void;
+    // The last usage ping; undefined when none was ever started.
+    lastProbe(): ProbeRecord | undefined;
+    saveProbe(probe: ProbeRecord): void;
+}
+
+// Where the live usage can be learned at the price of one tiny reply.
+export interface UsageSource {
+    readUsage(): Promise<UsageProbe>;
 }
 
 // Runs work against the stored state as one atomic step, so concurrent sessions never see or drop half a change.

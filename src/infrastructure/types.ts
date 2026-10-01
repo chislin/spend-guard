@@ -4,6 +4,8 @@ export enum EntryPoint {
     StatusLine = 'statusline',
     Setup = 'setup',
     Restore = 'restore',
+    // Runs the usage ping and records its answer; started in the background by a hook or the check command.
+    Ping = 'ping',
 }
 
 // The parts of the user's settings.json the plugin touches. Everything else is kept as it is.

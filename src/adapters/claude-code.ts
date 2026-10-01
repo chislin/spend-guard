@@ -1,7 +1,9 @@
 // The only module that knows Claude Code's hook and status line JSON, and what its setup and restore commands do.
-import { GuardMode, UsageWindow, type GuardStatus, type UsageReading } from '../domain/types.ts';
+import { GuardMode, UsageWindow, Verdict, type GuardStatus, type RefusedTurn, type UsageReading } from '../domain/types.ts';
 import type { SpendGuard } from '../domain/spend-guard.ts';
 import type { CommandFile } from '../infrastructure/command-file.ts';
+import type { ScheduledTasksFile } from '../infrastructure/scheduled-tasks-file.ts';
+import { UsagePing } from '../infrastructure/usage-ping.ts';
 import type { SettingsFile } from '../infrastructure/settings-file.ts';
 import type { StableCopy } from '../infrastructure/stable-copy.ts';
 import type { StatusLineWrapper } from '../infrastructure/status-line-wrapper.ts';
@@ -22,14 +24,20 @@ import {
     COMMAND_NAME,
     commandUsage,
     couldNotCheck,
+    couldNotSchedule,
     couldNotStart,
     describeStatus,
     NOT_CONNECTED,
     nothingToRestore,
+    PROBE_STARTED,
+    probeLine,
     refusal,
+    RESEND_HINT,
+    resendOutcome,
     restoreDone,
     setupDone,
     SpendCommand,
+    USAGE_FORGOTTEN,
 } from './messages.ts';
 
 const PASS: HookAnswer = '';
@@ -50,6 +58,8 @@ export class ClaudeCodeAdapter {
         private readonly wrapper: StatusLineWrapper,
         private readonly settings: SettingsFile,
         private readonly commandFile: CommandFile,
+        private readonly scheduledTasks: ScheduledTasksFile,
+        private readonly ping: UsagePing,
         private readonly deadlineMs = HOOK_DEADLINE_MS,
     ) {}
 
@@ -72,6 +82,11 @@ export class ClaudeCodeAdapter {
             console.error(`spend-guard: ${causeOf(error)}`);
         }
         return this.wrapper.runUserCommand(input);
+    }
+
+    // Runs the usage ping to its end and records what it gave; the hook that started it has long answered.
+    async runPing(): Promise<void> {
+        await this.guard.recordProbe(await this.ping.readUsage());
     }
 
     // Wraps the user's status line command so the guard receives the gauges, and adds the /spend-guard user command.
@@ -121,7 +136,7 @@ export class ClaudeCodeAdapter {
             case HookEvent.SessionStart:
                 return this.startSession();
             case HookEvent.UserPromptSubmit:
-                return this.answerPrompt(event.session_id);
+                return this.answerPrompt(event);
             case HookEvent.UserPromptExpansion:
                 return this.answerCommand(event.session_id, event.command_name, event.command_args ?? '');
             case HookEvent.PreToolUse:
@@ -146,10 +161,44 @@ export class ClaudeCodeAdapter {
         }
     }
 
-    // A prompt is let through or refused; a refused one stays visible so the user can resend it.
-    private async answerPrompt(sessionId: string): Promise<HookAnswer> {
-        const reason = refusal(await this.guard.verdictFor(sessionId));
-        return reason === undefined ? PASS : blockPrompt(reason);
+    // A prompt is let through or refused; a refused one stays in the input box, and is scheduled to be sent again when asked.
+    private async answerPrompt(event: HookInput): Promise<HookAnswer> {
+        const turn = await this.guard.verdictFor(event.session_id);
+        if (turn.verdict === Verdict.Proceed) {
+            return PASS;
+        }
+        const lines = [refusal(turn), await this.probeLineForRefusal(), await this.resendLine(turn, event)];
+        return blockPrompt(lines.filter((line) => line !== '').join('\n'));
+    }
+
+    // A refusal rests on gauges the stopped sessions cannot refresh, so it starts a usage ping when one is due,
+    // and says what the last one gave otherwise.
+    private async probeLineForRefusal(): Promise<string> {
+        if (await this.guard.claimProbe()) {
+            UsagePing.launchInBackground();
+            return PROBE_STARTED;
+        }
+        return probeLine((await this.guard.status('')).lastProbe, this.guard.nowSeconds());
+    }
+
+    // Schedules the refused prompt for after the reset, and says what became of it. A prompt with no words is let go.
+    private async resendLine(turn: RefusedTurn, event: HookInput): Promise<string> {
+        if (!turn.resendBlocked) {
+            return RESEND_HINT;
+        }
+        const prompt = event.prompt?.trim() ?? '';
+        if (prompt === '') {
+            return '';
+        }
+        if (event.cwd === undefined) {
+            return couldNotSchedule('the hook input names no project folder');
+        }
+        try {
+            const request = { projectDir: event.cwd, sessionId: event.session_id, prompt, notBeforeSeconds: turn.gauge.resetsAtSeconds };
+            return resendOutcome(await this.scheduledTasks.scheduleResend(request), turn.gauge.window);
+        } catch (error) {
+            return couldNotSchedule(causeOf(error));
+        }
     }
 
     // The /spend-guard command is answered here and never expands; every other command is left alone.
@@ -157,21 +206,51 @@ export class ClaudeCodeAdapter {
         if (name !== COMMAND_NAME) {
             return PASS;
         }
-        const status = await this.spendCommandOutcome(sessionId, argument.trim().toLowerCase().split(/\s+/));
+        const words = argument.trim().toLowerCase().split(/\s+/);
+        const status = await this.spendCommandOutcome(sessionId, words);
         if (status === undefined) {
             return blockPrompt(commandUsage());
         }
-        return blockPrompt(describeStatus(status, await this.connected()));
+        const preface = [];
+        if (words[0] === SpendCommand.Reset) {
+            preface.push(USAGE_FORGOTTEN);
+        }
+        if (words[0] === SpendCommand.Check) {
+            preface.push(await this.startCheck());
+        }
+        return blockPrompt([...preface, describeStatus(status, await this.connected())].join('\n'));
+    }
+
+    // The check command starts a ping now, unless one is already running.
+    private async startCheck(): Promise<string> {
+        if (await this.guard.claimProbe(true)) {
+            UsagePing.launchInBackground();
+            return PROBE_STARTED;
+        }
+        return probeLine((await this.guard.status('')).lastProbe, this.guard.nowSeconds());
     }
 
     // The state the command leaves the session in; undefined when the words are not one of the command's forms.
     private async spendCommandOutcome(sessionId: string, words: string[]): Promise<GuardStatus | undefined> {
         const [first = SpendCommand.Status, scope, ...rest] = words;
-        const mode = COMMAND_MODES[first];
         if (first === SpendCommand.Status && scope === undefined) {
             return this.guard.status(sessionId);
         }
-        if (mode === undefined || rest.length > 0) {
+        if (rest.length > 0) {
+            return undefined;
+        }
+        if (first === SpendCommand.Reset || first === SpendCommand.Check) {
+            if (scope !== undefined) {
+                return undefined;
+            }
+            return first === SpendCommand.Reset ? this.guard.forgetUsage(sessionId) : this.guard.status(sessionId);
+        }
+        if (first === SpendCommand.Resend) {
+            const resendMode = COMMAND_MODES[scope ?? ''];
+            return resendMode === undefined ? undefined : this.guard.setResendBlocked(sessionId, resendMode === GuardMode.On);
+        }
+        const mode = COMMAND_MODES[first];
+        if (mode === undefined) {
             return undefined;
         }
         if (scope === undefined) {
@@ -187,11 +266,11 @@ export class ClaudeCodeAdapter {
     }
 
     private async checkToolCall(sessionId: string): Promise<HookAnswer> {
-        const reason = refusal(await this.guard.verdictFor(sessionId));
-        if (reason === undefined) {
+        const turn = await this.guard.verdictFor(sessionId);
+        if (turn.verdict === Verdict.Proceed) {
             return PASS;
         }
-        return stopTurn(reason);
+        return stopTurn([refusal(turn), await this.probeLineForRefusal()].filter((line) => line !== '').join('\n'));
     }
 }
 
@@ -211,13 +290,14 @@ function readingsFrom(status: StatusLineInput): UsageReading[] {
     return readings;
 }
 
+// The reason is repeated as a system message so a Remote Control device sees why nothing was answered.
 function blockPrompt(reason: string): HookAnswer {
-    const block: PromptBlock = { decision: 'block', reason };
+    const block: PromptBlock = { decision: 'block', reason, systemMessage: reason };
     return JSON.stringify(block);
 }
 
 function stopTurn(stopReason: string): HookAnswer {
-    const stop: TurnStop = { continue: false, stopReason };
+    const stop: TurnStop = { continue: false, stopReason, systemMessage: stopReason };
     return JSON.stringify(stop);
 }
 

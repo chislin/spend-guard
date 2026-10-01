@@ -4,10 +4,12 @@ import { ClaudeCodeAdapter } from './adapters/claude-code.ts';
 import { COMMAND_NAME } from './adapters/messages.ts';
 import { SpendGuard } from './domain/spend-guard.ts';
 import { CommandFile } from './infrastructure/command-file.ts';
+import { ScheduledTasksFile } from './infrastructure/scheduled-tasks-file.ts';
 import { SettingsFile } from './infrastructure/settings-file.ts';
 import { SqliteGuardRepository } from './infrastructure/sqlite-guard-repository.ts';
 import { StableCopy } from './infrastructure/stable-copy.ts';
 import { StatusLineWrapper } from './infrastructure/status-line-wrapper.ts';
+import { PING_ENV, UsagePing } from './infrastructure/usage-ping.ts';
 import { EntryPoint } from './infrastructure/types.ts';
 
 const sourceDir = import.meta.dir;
@@ -19,11 +21,18 @@ const stableCopy = new StableCopy(sourceDir, dataDir);
 const wrapper = new StatusLineWrapper(stableCopy.entryFile);
 const settings = new SettingsFile(join(configDir, 'settings.json'));
 const commandFile = new CommandFile(join(configDir, 'commands', `${COMMAND_NAME}.md`));
-const adapter = new ClaudeCodeAdapter(guard, stableCopy, wrapper, settings, commandFile);
+const ping = new UsagePing(Bun.env.CLAUDE_CODE_EXECPATH || 'claude');
+const adapter = new ClaudeCodeAdapter(guard, stableCopy, wrapper, settings, commandFile, new ScheduledTasksFile(), ping);
 
 switch (Bun.argv[2]) {
     case EntryPoint.Hook:
-        await Bun.write(Bun.stdout, await adapter.runHook(await Bun.stdin.text()));
+        // The usage ping's own session is let through untouched, and never counted.
+        if (!Bun.env[PING_ENV]) {
+            await Bun.write(Bun.stdout, await adapter.runHook(await Bun.stdin.text()));
+        }
+        break;
+    case EntryPoint.Ping:
+        await adapter.runPing();
         break;
     case EntryPoint.StatusLine:
         process.exitCode = await adapter.runStatusLine(await Bun.stdin.text());
