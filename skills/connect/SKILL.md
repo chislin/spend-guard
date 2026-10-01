@@ -1,10 +1,10 @@
 ---
-name: setup
-description: Connect spend-guard to the Claude Code status line so it can read the plan usage gauges. Use when the user invokes /spend-guard:setup.
+name: connect
+description: Connect spend-guard to the Claude Code status line so it can read the plan usage gauges. Use when the user invokes /spend-guard:connect.
 disable-model-invocation: true
 ---
 
-# spend-guard setup
+# spend-guard connect
 
 Claude Code sends the 5-hour and weekly usage gauges only to the status line, and a plugin cannot set the status line or add a bare `/spend-guard` command. This one-time step wraps the user's status line command so spend-guard receives the gauges, and adds `/spend-guard` to the user's commands.
 
@@ -20,4 +20,4 @@ Claude Code sends the 5-hour and weekly usage gauges only to the status line, an
    - Start a new session now and work there. spend-guard protects it from the first reply.
    - `/spend-guard on`, `/spend-guard off`, the same with `all` for every session, and `/spend-guard` are answered by spend-guard and never reach Claude.
    - spend-guard lowers the chance of billing usage credits. It cannot rule it out.
-   - To undo, run `/spend-guard:restore`.
+   - To undo, run `/spend-guard:disconnect`.

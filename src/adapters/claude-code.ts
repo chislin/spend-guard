@@ -274,7 +274,7 @@ export class ClaudeCodeAdapter {
     }
 }
 
-// The plugin's own setup and restore run through a Bash tool call, and must never be stopped by the guard itself:
+// The plugin's own connect and disconnect run through a Bash tool call, and must never be stopped by the guard itself:
 // a user at the limit still has to be able to take the plugin out.
 const OWN_COMMAND = /main\.ts["']?\s+(setup|restore)\b/;
 

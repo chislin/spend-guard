@@ -24,7 +24,7 @@ Wait for the reset at 11:30 PM, or send /spend-guard off to bill them anyway.
 
 1. `claude plugin marketplace add chislin/spend-guard`
 2. `claude plugin install spend-guard@spend-guard`
-3. Start a new session and run `/spend-guard:setup` once. It wraps your status line command in your user settings and adds the `/spend-guard` command to `~/.claude/commands`. Your status line looks the same as before, and your original command stays readable in the settings file.
+3. Start a new session and run `/spend-guard:connect` once. It wraps your status line command in your user settings and adds the `/spend-guard` command to `~/.claude/commands`. Your status line looks the same as before, and your original command stays readable in the settings file.
 4. Start another new session and work there. spend-guard protects it from the first reply.
 
 ## Use
@@ -81,7 +81,7 @@ spend-guard lowers the chance of billing usage credits. It cannot rule it out.
 - Claude Code also keeps weekly limits per model (Opus, Sonnet) but does not send them to the status line. spend-guard cannot see those.
 - A session without a status line (`claude -p`, the Agent SDK) sends no readings. spend-guard then relies on what other sessions last reported.
 - A project settings file with its own status line hides that session the same way. The `spend` prompt tells you when this session's status line has not reached spend-guard.
-- Until setup runs, or after the status line was changed by hand, spend-guard sees no usage and stops nothing. Every session start and the `spend` prompt tell you so.
+- Until `/spend-guard:connect` runs, or after the status line was changed by hand, spend-guard sees no usage and stops nothing. Every session start and the `spend` prompt tell you so.
 
 ## When something goes wrong
 
@@ -94,7 +94,7 @@ spend-guard lowers the chance of billing usage credits. It cannot rule it out.
 
 ## Uninstall
 
-1. Run `/spend-guard:restore`. It puts your original status line command back and removes the `/spend-guard` command. The guard never stops its own setup or restore, whatever the usage.
+1. Run `/spend-guard:disconnect`. It puts your original status line command back and removes the `/spend-guard` command. The guard never stops its own connect or disconnect, whatever the usage.
 2. `claude plugin uninstall spend-guard@spend-guard`
 
 To stop the hooks without a Claude session, run `claude plugin disable spend-guard` in a terminal and restart your sessions.

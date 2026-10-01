@@ -389,8 +389,8 @@ describe('plugin hooks', () => {
         const box = sandbox();
         const reply = command(box, 's1', SpendCommand.Status);
         expect(reply.reason).toContain('spend-guard: on for all sessions');
-        expect(reply.reason).toContain('Run /spend-guard:setup');
-        expect(hook(box, HookEvent.SessionStart, 's1').systemMessage).toContain('Run /spend-guard:setup');
+        expect(reply.reason).toContain('Run /spend-guard:connect');
+        expect(hook(box, HookEvent.SessionStart, 's1').systemMessage).toContain('Run /spend-guard:connect');
     });
 
     test('after setup, a window without data says when data arrives and the session start is silent', () => {
@@ -400,7 +400,7 @@ describe('plugin hooks', () => {
         const reply = command(box, 's1', SpendCommand.Status);
         expect(reply.reason).toContain('weekly: no data yet');
         expect(reply.reason).not.toContain('No usage from this session yet');
-        expect(reply.reason).not.toContain('/spend-guard:setup');
+        expect(reply.reason).not.toContain('/spend-guard:connect');
         expect(hook(box, HookEvent.SessionStart, 's1')).toBeUndefined();
     });
 

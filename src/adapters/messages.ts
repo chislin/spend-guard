@@ -43,13 +43,13 @@ export const COMMAND_FILE_TEXT = [
     '---',
     'spend-guard did not answer this command, so its hooks are not running. Tell the user, in plain words:',
     'the plugin is disabled or uninstalled; run `claude plugin enable spend-guard` to bring it back,',
-    'or `/spend-guard:restore` to remove this command. Do nothing else. Arguments: $ARGUMENTS',
+    'or `/spend-guard:disconnect` to remove this command. Do nothing else. Arguments: $ARGUMENTS',
     '',
 ].join('\n');
 
 const NO_COMMAND = '(none)';
 
-export const NOT_CONNECTED = 'Run /spend-guard:setup to connect. Until then spend-guard sees no usage and stops nothing.';
+export const NOT_CONNECTED = 'Run /spend-guard:connect to connect. Until then spend-guard sees no usage and stops nothing.';
 
 const NOT_REPORTING =
     "No usage from this session yet. It arrives with Claude's next reply.\n" +
@@ -105,7 +105,7 @@ export function restoreDone(userCommand: string | undefined): string {
     return [
         `Status line restored. /${COMMAND_NAME} removed.`,
         `Status line command now: ${userCommand ?? NO_COMMAND}`,
-        'spend-guard sees no usage and stops nothing until /spend-guard:setup runs again.',
+        'spend-guard sees no usage and stops nothing until /spend-guard:connect runs again.',
     ].join('\n');
 }
 
