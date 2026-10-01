@@ -37,11 +37,11 @@ switch (Bun.argv[2]) {
     case EntryPoint.StatusLine:
         process.exitCode = await adapter.runStatusLine(await Bun.stdin.text());
         break;
-    case EntryPoint.Setup:
-        console.log(await adapter.setup());
+    case EntryPoint.Connect:
+        console.log(await adapter.connect());
         break;
-    case EntryPoint.Restore:
-        console.log(await adapter.restore());
+    case EntryPoint.Disconnect:
+        console.log(await adapter.disconnect());
         break;
     default:
         throw new Error(`Unknown entry point: ${Bun.argv[2]}`);

@@ -88,29 +88,29 @@ export function couldNotStart(cause: string): string {
     return `spend-guard could not start: ${cause}`;
 }
 
-export function setupDone(userCommand: string | undefined): string {
+export function connectDone(userCommand: string | undefined): string {
     return [
-        'spend-guard is set up.',
+        'spend-guard is connected.',
         `Original status line command: ${userCommand ?? NO_COMMAND}`,
         `Added /${COMMAND_NAME} ${SpendCommand.On}, /${COMMAND_NAME} ${SpendCommand.Off} and /${COMMAND_NAME}.`,
         'Start a new session now. spend-guard protects it from the first reply.',
     ].join('\n');
 }
 
-export function alreadySetUp(userCommand: string | undefined): string {
-    return ['spend-guard is already set up. Nothing changed.', `Original status line command: ${userCommand ?? NO_COMMAND}`].join('\n');
+export function alreadyConnected(userCommand: string | undefined): string {
+    return ['spend-guard is already connected. Nothing changed.', `Original status line command: ${userCommand ?? NO_COMMAND}`].join('\n');
 }
 
-export function restoreDone(userCommand: string | undefined): string {
+export function disconnectDone(userCommand: string | undefined): string {
     return [
-        `Status line restored. /${COMMAND_NAME} removed.`,
+        `Status line disconnected. /${COMMAND_NAME} removed.`,
         `Status line command now: ${userCommand ?? NO_COMMAND}`,
         'spend-guard sees no usage and stops nothing until /spend-guard:connect runs again.',
     ].join('\n');
 }
 
-export function nothingToRestore(currentCommand: string | undefined): string {
-    return ['Nothing to restore. spend-guard is not set up.', `Status line command now: ${currentCommand ?? NO_COMMAND}`].join('\n');
+export function nothingToDisconnect(currentCommand: string | undefined): string {
+    return ['Nothing to disconnect. spend-guard is not connected.', `Status line command now: ${currentCommand ?? NO_COMMAND}`].join('\n');
 }
 
 export const PROBE_STARTED = `Checking the live usage with a one-word ${PING_MODEL} reply, which costs a little usage. Send your prompt again in a few seconds.`;

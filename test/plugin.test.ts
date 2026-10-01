@@ -227,7 +227,7 @@ describe('plugin hooks', () => {
     test('other commands expand as usual and a wrong argument is explained', () => {
         const box = sandbox();
         expect(command(box, 's1', 'off', 'other')).toBeUndefined();
-        expect(command(box, 's1', 'spend-guard:setup', 'other')).toBeUndefined();
+        expect(command(box, 's1', 'spend-guard:connect', 'other')).toBeUndefined();
         const reply = command(box, 's1', 'maybe');
         expect(reply.decision).toBe('block');
         expect(reply.reason).toContain('/spend-guard on all or /spend-guard off all for every session');
@@ -385,7 +385,7 @@ describe('plugin hooks', () => {
         expect(reply.reason).toContain('5-hour: 91.4% used, a reply adds ~2%, resets ');
     });
 
-    test('without setup, the status prompt and the session start say how to connect', () => {
+    test('before connecting, the status prompt and the session start say how to connect', () => {
         const box = sandbox();
         const reply = command(box, 's1', SpendCommand.Status);
         expect(reply.reason).toContain('spend-guard: on for all sessions');
@@ -393,9 +393,9 @@ describe('plugin hooks', () => {
         expect(hook(box, HookEvent.SessionStart, 's1').systemMessage).toContain('Run /spend-guard:connect');
     });
 
-    test('after setup, a window without data says when data arrives and the session start is silent', () => {
+    test('after connecting, a window without data says when data arrives and the session start is silent', () => {
         const box = sandbox();
-        run(box, EntryPoint.Setup);
+        run(box, EntryPoint.Connect);
         run(box, EntryPoint.StatusLine, { session_id: 's1' });
         const reply = command(box, 's1', SpendCommand.Status);
         expect(reply.reason).toContain('weekly: no data yet');
@@ -404,9 +404,9 @@ describe('plugin hooks', () => {
         expect(hook(box, HookEvent.SessionStart, 's1')).toBeUndefined();
     });
 
-    test('after setup, a session whose status line never reached the guard says so', () => {
+    test('after connecting, a session whose status line never reached the guard says so', () => {
         const box = sandbox();
-        run(box, EntryPoint.Setup);
+        run(box, EntryPoint.Connect);
         reportFiveHour(box, 50);
         const reply = command(box, 's2', SpendCommand.Status);
         expect(reply.reason).toContain('No usage from this session yet');
@@ -422,9 +422,9 @@ describe('plugin hooks', () => {
         expect(await Bun.file(leftover).exists()).toBe(false);
     });
 
-    test('after setup, session start rewrites the command file so it follows plugin updates', async () => {
+    test('after connecting, session start rewrites the command file so it follows plugin updates', async () => {
         const box = sandbox();
-        run(box, EntryPoint.Setup);
+        run(box, EntryPoint.Connect);
         await Bun.write(commandFile(box), 'text from an older build');
         hook(box, HookEvent.SessionStart, 's1');
         expect(await Bun.file(commandFile(box)).text()).toBe(COMMAND_FILE_TEXT);
@@ -470,11 +470,11 @@ describe('failures', () => {
         expect(hook(box, HookEvent.PreToolUse, 's1').continue).toBe(false);
     });
 
-    test("the plugin's own setup and restore are never stopped, whatever the usage", () => {
+    test("the plugin's own connect and disconnect are never stopped, whatever the usage", () => {
         const box = sandbox();
         reportFiveHour(box, 60, 76, 99);
         expect(hook(box, HookEvent.PreToolUse, 's1').continue).toBe(false);
-        for (const entry of [EntryPoint.Restore, EntryPoint.Setup]) {
+        for (const entry of [EntryPoint.Disconnect, EntryPoint.Connect]) {
             const command = `CLAUDE_PLUGIN_DATA="x" bun "/plugins/spend-guard/src/main.ts" ${entry}`;
             const event = { session_id: 's1', hook_event_name: HookEvent.PreToolUse, tool_name: 'Bash', tool_input: { command } };
             expect(run(box, EntryPoint.Hook, event)).toBe('');
@@ -541,7 +541,7 @@ describe('failures', () => {
 
     test('an empty data folder name is refused instead of writing into the current folder', () => {
         const box = sandbox();
-        const result = Bun.spawnSync(['bun', MAIN, EntryPoint.Setup], { env: pluginEnv(box, '') });
+        const result = Bun.spawnSync(['bun', MAIN, EntryPoint.Connect], { env: pluginEnv(box, '') });
         expect(result.exitCode).not.toBe(0);
         expect(result.stderr.toString()).toContain('CLAUDE_PLUGIN_DATA is not set');
     });
@@ -557,18 +557,18 @@ describe('failures', () => {
     test('the user status line still runs when the input cannot be read', async () => {
         const box = sandbox();
         await writeSettings(box, { statusLine: { type: 'command', command: 'echo mine' } });
-        run(box, EntryPoint.Setup);
+        run(box, EntryPoint.Connect);
         expect((await runSettingsStatusLine(box, '')).stdout.toString()).toBe('mine\n');
     });
 });
 
-describe('status line setup', () => {
+describe('status line connection', () => {
     test('wraps the user status line once, keeps its other fields, and passes the input through', async () => {
         const box = sandbox();
         await writeSettings(box, { model: 'opus', statusLine: { type: 'command', command: 'cat | cat', padding: 0 } });
 
-        expect(run(box, EntryPoint.Setup)).toContain('Original status line command: cat | cat');
-        expect(run(box, EntryPoint.Setup)).toContain('already set up');
+        expect(run(box, EntryPoint.Connect)).toContain('Original status line command: cat | cat');
+        expect(run(box, EntryPoint.Connect)).toContain('already connected');
 
         const settings = await readSettings(box);
         expect(settings.model).toBe('opus');
@@ -582,27 +582,27 @@ describe('status line setup', () => {
         expect(await Bun.file(join(box.dataDir, 'guard.db')).exists()).toBe(true);
     });
 
-    test('setup adds the /spend-guard command to the user commands and restore removes it', async () => {
+    test('connect adds the /spend-guard command to the user commands and disconnect removes it', async () => {
         const box = sandbox();
-        run(box, EntryPoint.Setup);
+        run(box, EntryPoint.Connect);
         expect(await Bun.file(commandFile(box)).text()).toContain('$ARGUMENTS');
 
-        run(box, EntryPoint.Restore);
+        run(box, EntryPoint.Disconnect);
         expect(await Bun.file(commandFile(box)).exists()).toBe(false);
-        expect(run(box, EntryPoint.Restore)).toContain('Nothing to restore');
+        expect(run(box, EntryPoint.Disconnect)).toContain('Nothing to disconnect');
     });
 
     test("the user's command keeps a single quote and runs when the plugin data or bun is gone", async () => {
         const box = sandbox();
         await writeSettings(box, { statusLine: { type: 'command', command: "echo 'it''s mine'" } });
-        run(box, EntryPoint.Setup);
+        run(box, EntryPoint.Connect);
         expect((await runSettingsStatusLine(box, '')).stdout.toString()).toBe('its mine\n');
 
         expect((await runSettingsStatusLine(box, '', { PATH: '/usr/bin:/bin' })).stdout.toString()).toBe('its mine\n');
         await rm(box.dataDir, { recursive: true, force: true });
         expect((await runSettingsStatusLine(box, '')).stdout.toString()).toBe('its mine\n');
 
-        expect(run(box, EntryPoint.Restore)).toContain("Status line command now: echo 'it''s mine'");
+        expect(run(box, EntryPoint.Disconnect)).toContain("Status line command now: echo 'it''s mine'");
     });
 
     test('the first command of a user pipeline receives the input', async () => {
@@ -614,29 +614,29 @@ describe('status line setup', () => {
         for (const [command, output] of pipelines) {
             const box = sandbox();
             await writeSettings(box, { statusLine: { type: 'command', command } });
-            run(box, EntryPoint.Setup);
+            run(box, EntryPoint.Connect);
             expect((await runSettingsStatusLine(box, 'hi')).stdout.toString()).toBe(output);
         }
     });
 
-    test('restore puts the original command back and is safe to repeat', async () => {
+    test('disconnect puts the original command back and is safe to repeat', async () => {
         const box = sandbox();
         await writeSettings(box, { model: 'opus', statusLine: { type: 'command', command: 'cat', padding: 0 } });
-        run(box, EntryPoint.Setup);
+        run(box, EntryPoint.Connect);
 
-        expect(run(box, EntryPoint.Restore)).toContain('Status line command now: cat');
+        expect(run(box, EntryPoint.Disconnect)).toContain('Status line command now: cat');
         expect(await readSettings(box)).toEqual({ model: 'opus', statusLine: { type: 'command', command: 'cat', padding: 0 } });
-        expect(run(box, EntryPoint.Restore)).toContain('Nothing to restore');
+        expect(run(box, EntryPoint.Disconnect)).toContain('Nothing to disconnect');
     });
 
-    test('restore removes the status line when there was none before setup', async () => {
+    test('disconnect removes the status line when there was none before connecting', async () => {
         const box = sandbox();
-        run(box, EntryPoint.Setup);
-        expect(run(box, EntryPoint.Restore)).toContain('Status line command now: (none)');
+        run(box, EntryPoint.Connect);
+        expect(run(box, EntryPoint.Disconnect)).toContain('Status line command now: (none)');
         expect(await readSettings(box)).toEqual({});
     });
 
-    test('setup writes through a symlinked settings file and keeps the link', async () => {
+    test('connect writes through a symlinked settings file and keeps the link', async () => {
         const box = sandbox();
         const realFile = join(box.root, 'dotfiles', 'settings.json');
         const linkFile = settingsFile(box);
@@ -644,7 +644,7 @@ describe('status line setup', () => {
         await mkdir(box.configDir, { recursive: true });
         await symlink(realFile, linkFile);
 
-        run(box, EntryPoint.Setup);
+        run(box, EntryPoint.Connect);
         expect((await lstat(linkFile)).isSymbolicLink()).toBe(true);
         expect((await Bun.file(realFile).json()).statusLine.command).toContain('statusline');
     });

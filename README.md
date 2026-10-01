@@ -108,7 +108,7 @@ If you uninstall without restoring, your original status line still works: the w
 | `src/domain/` | `UsageLedger` aggregate, `SpendGuard` service, the `GuardRepository` port, and their types |
 | `src/infrastructure/` | The repository in SQLite, the stable source copy, the status line wrapper, the settings file |
 | `src/adapters/` | Everything that speaks Claude Code's JSON or runs its commands, and every sentence the user reads |
-| `src/main.ts` | Entry point: `hook`, `statusline`, `setup`, `restore` |
+| `src/main.ts` | Entry point: `hook`, `statusline`, `connect`, `disconnect`, `ping` |
 
 Types and interfaces live in `types.ts`, `ports.ts` and `*.types.ts` next to the code that uses them.
 

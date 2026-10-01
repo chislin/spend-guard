@@ -11,7 +11,7 @@ Claude Code sends the 5-hour and weekly usage gauges only to the status line, an
 1. Run:
 
    ```bash
-   CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" bun "${CLAUDE_PLUGIN_ROOT}/src/main.ts" setup
+   CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" bun "${CLAUDE_PLUGIN_ROOT}/src/main.ts" connect
    ```
 
 2. Tell the user, in plain words:

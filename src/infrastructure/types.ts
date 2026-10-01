@@ -2,8 +2,8 @@
 export enum EntryPoint {
     Hook = 'hook',
     StatusLine = 'statusline',
-    Setup = 'setup',
-    Restore = 'restore',
+    Connect = 'connect',
+    Disconnect = 'disconnect',
     // Runs the usage ping and records its answer; started in the background by a hook or the check command.
     Ping = 'ping',
 }

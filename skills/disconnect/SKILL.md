@@ -11,7 +11,7 @@ Undoes `/spend-guard:connect`. Run it before uninstalling the plugin, so the set
 1. Run:
 
    ```bash
-   CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" bun "${CLAUDE_PLUGIN_ROOT}/src/main.ts" restore
+   CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" bun "${CLAUDE_PLUGIN_ROOT}/src/main.ts" disconnect
    ```
 
 2. Tell the user, in plain words:

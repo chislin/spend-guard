@@ -1,4 +1,4 @@
-// The only module that knows Claude Code's hook and status line JSON, and what its setup and restore commands do.
+// The only module that knows Claude Code's hook and status line JSON, and what its connect and disconnect commands do.
 import { GuardMode, UsageWindow, Verdict, type GuardStatus, type RefusedTurn, type UsageReading } from '../domain/types.ts';
 import type { SpendGuard } from '../domain/spend-guard.ts';
 import type { CommandFile } from '../infrastructure/command-file.ts';
@@ -19,7 +19,7 @@ import {
 } from './claude-code.types.ts';
 import {
     ALL_SESSIONS,
-    alreadySetUp,
+    alreadyConnected,
     COMMAND_FILE_TEXT,
     COMMAND_NAME,
     commandUsage,
@@ -28,14 +28,14 @@ import {
     couldNotStart,
     describeStatus,
     NOT_CONNECTED,
-    nothingToRestore,
+    nothingToDisconnect,
     PROBE_STARTED,
     probeLine,
     refusal,
     RESEND_HINT,
     resendOutcome,
-    restoreDone,
-    setupDone,
+    disconnectDone,
+    connectDone,
     SpendCommand,
     USAGE_FORGOTTEN,
 } from './messages.ts';
@@ -50,7 +50,7 @@ const RATE_LIMIT_KEYS: Record<UsageWindow, RateLimitKey> = {
 // Claude Code cuts a hook off at the timeout in plugin.json and lets the turn go on; the guard answers before that.
 const HOOK_DEADLINE_MS = 4000;
 
-// Answers Claude Code for one plugin run: a hook, a status line refresh, or the setup and restore commands.
+// Answers Claude Code for one plugin run: a hook, a status line refresh, or the connect and disconnect commands.
 export class ClaudeCodeAdapter {
     constructor(
         private readonly guard: SpendGuard,
@@ -91,31 +91,31 @@ export class ClaudeCodeAdapter {
 
     // Wraps the user's status line command so the guard receives the gauges, and adds the /spend-guard user command.
     // Safe to repeat. Returns what to tell the user.
-    async setup(): Promise<string> {
+    async connect(): Promise<string> {
         await this.stableCopy.refresh();
         const settings = await this.settings.read();
         const currentCommand = settings.statusLine?.command;
         if (this.wrapper.isWrapping(currentCommand) && (await this.commandFile.exists())) {
-            return alreadySetUp(this.wrapper.userCommandOf(currentCommand));
+            return alreadyConnected(this.wrapper.userCommandOf(currentCommand));
         }
         await this.commandFile.write(COMMAND_FILE_TEXT);
         if (this.wrapper.isWrapping(currentCommand)) {
-            return setupDone(this.wrapper.userCommandOf(currentCommand));
+            return connectDone(this.wrapper.userCommandOf(currentCommand));
         }
         const command = this.wrapper.wrapping(currentCommand ?? '');
         settings.statusLine = { ...settings.statusLine, type: 'command', command };
         await this.settings.write(settings);
-        return setupDone(currentCommand);
+        return connectDone(currentCommand);
     }
 
-    // Undoes setup. A status line the user changed after setup is left as it is. Returns what to tell the user.
-    async restore(): Promise<string> {
+    // Undoes connect. A status line the user changed after connecting is left as it is. Returns what to tell the user.
+    async disconnect(): Promise<string> {
         const hadCommand = await this.commandFile.exists();
         await this.commandFile.remove();
         const settings = await this.settings.read();
         const currentCommand = settings.statusLine?.command;
         if (!this.wrapper.isWrapping(currentCommand)) {
-            return hadCommand ? restoreDone(currentCommand) : nothingToRestore(currentCommand);
+            return hadCommand ? disconnectDone(currentCommand) : nothingToDisconnect(currentCommand);
         }
         const userCommand = this.wrapper.userCommandOf(currentCommand);
         if (userCommand === undefined) {
@@ -124,7 +124,7 @@ export class ClaudeCodeAdapter {
             settings.statusLine = { ...settings.statusLine, type: 'command', command: userCommand };
         }
         await this.settings.write(settings);
-        return restoreDone(userCommand);
+        return disconnectDone(userCommand);
     }
 
     private async answerHook(input: string): Promise<HookAnswer> {
@@ -151,7 +151,7 @@ export class ClaudeCodeAdapter {
         try {
             await this.stableCopy.refresh();
             if (await this.connected()) {
-                // The command file follows plugin updates too, so setup never has to run twice.
+                // The command file follows plugin updates too, so connect never has to run twice.
                 await this.commandFile.write(COMMAND_FILE_TEXT);
                 return PASS;
             }
@@ -276,7 +276,7 @@ export class ClaudeCodeAdapter {
 
 // The plugin's own connect and disconnect run through a Bash tool call, and must never be stopped by the guard itself:
 // a user at the limit still has to be able to take the plugin out.
-const OWN_COMMAND = /main\.ts["']?\s+(setup|restore)\b/;
+const OWN_COMMAND = /main\.ts["']?\s+(connect|disconnect)\b/;
 
 function runsOwnCommand(event: HookInput): boolean {
     return event.tool_name === 'Bash' && typeof event.tool_input?.command === 'string' && OWN_COMMAND.test(event.tool_input.command);
