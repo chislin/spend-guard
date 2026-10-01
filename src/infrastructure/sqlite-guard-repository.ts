@@ -11,7 +11,11 @@ const SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
 const BUSY_TIMEOUT_MS = 2000;
 
 // A database written by another schema version is emptied: the ledger refills on the next status line refresh.
-const SCHEMA_VERSION = 4;
+// The version never moves for an addition: a session open across a plugin update still runs the old status line
+// from its stable copy, and the two builds would otherwise empty the file for each other on every refresh.
+// One build labelled these tables 4; a file it wrote is as good as one labelled 3 and is left alone.
+const SCHEMA_VERSION = 3;
+const KNOWN_VERSIONS = [SCHEMA_VERSION, 4];
 const SCHEMA = `
     DROP TABLE IF EXISTS ledger;
     DROP TABLE IF EXISTS rises;
@@ -27,14 +31,17 @@ const SCHEMA = `
         status_line_seen_at_seconds REAL,
         saved_at_seconds REAL NOT NULL
     );
-    CREATE TABLE session_readings (
+    PRAGMA user_version = ${SCHEMA_VERSION};
+`;
+// Tables added since the version was set; created where missing, kept where present. An older build ignores them.
+const ADDITIONS = `
+    CREATE TABLE IF NOT EXISTS session_readings (
         session_id TEXT NOT NULL,
         window TEXT NOT NULL,
         percent_used REAL NOT NULL,
         resets_at_seconds REAL NOT NULL,
         PRIMARY KEY (session_id, window)
     );
-    PRAGMA user_version = ${SCHEMA_VERSION};
 `;
 const ALL_SESSIONS_KEY = 'mode_for_all_sessions';
 const RESEND_KEY = 'resend_blocked';
@@ -86,9 +93,10 @@ export class SqliteGuardRepository implements GuardRepository {
         db.run('PRAGMA journal_mode = WAL');
         db.transaction(() => {
             const version = db.query<VersionRow, []>('PRAGMA user_version').get()?.user_version;
-            if (version !== SCHEMA_VERSION) {
+            if (version === undefined || !KNOWN_VERSIONS.includes(version)) {
                 db.run(SCHEMA);
             }
+            db.run(ADDITIONS);
         }).immediate();
         return db;
     }

@@ -470,6 +470,23 @@ describe('failures', () => {
         expect(hook(box, HookEvent.PreToolUse, 's1').continue).toBe(false);
     });
 
+    test('a database of the previous build keeps its data and gains the new table', () => {
+        const box = sandbox();
+        reportFiveHour(box, 99);
+        const db = new Database(join(box.dataDir, 'guard.db'));
+        db.run('DROP TABLE session_readings');
+        db.close();
+        expect(hook(box, HookEvent.PreToolUse, 's1').continue).toBe(false);
+        const labelledFour = new Database(join(box.dataDir, 'guard.db'));
+        labelledFour.run('PRAGMA user_version = 4');
+        labelledFour.close();
+        expect(hook(box, HookEvent.PreToolUse, 's1').continue).toBe(false);
+        expect(command(box, 's1', SpendCommand.Status).reason).toContain('5-hour: 99% used');
+        // The session's own last reading went with the table, so a drop shows after it reports once more.
+        reportFiveHour(box, 99, 5);
+        expect(hook(box, HookEvent.PreToolUse, 's1')).toBeUndefined();
+    });
+
     test('sessions reporting at the same time all land in the ledger', async () => {
         const box = sandbox();
         reportFiveHour(box, 50);
