@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
-    "target": "esnext",
+    "target": "es2023",
+    "lib": ["es2023"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -8,7 +9,8 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-    "types": ["bun"]
+    "skipLibCheck": true,
+    "types": []
   },
-  "include": ["src", "test"]
+  "include": ["types", "src", "tests"]
 }

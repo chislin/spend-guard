@@ -41,20 +41,10 @@ export type RefusedTurn = Extract<TurnVerdict, { verdict: Verdict.Refuse }>;
 export interface SessionState {
     // The mode this session chose; undefined means it follows the setting for all sessions.
     mode: GuardMode | undefined;
-    // When this session's status line last reached the guard; undefined means the guard may not see this session's usage.
-    statusLineSeenAtSeconds: number | undefined;
-    // The gauges this session last sent. A session's own gauge only falls when the account's usage really dropped.
+    // When this session last reported usage; undefined means it never has, so its own gauges are unknown.
+    reportedAtSeconds: number | undefined;
+    // The gauges this session last reported. A session's own gauge only falls when the account's usage really dropped.
     lastReadings: readonly UsageReading[];
-}
-
-// What a usage ping gave: the live gauges, or why there are none.
-export type UsageProbe = { readings: UsageReading[] } | { failure: string };
-
-// The last usage ping: started, and if it finished, with what. A ping still running has no finish time.
-export interface ProbeRecord {
-    startedAtSeconds: number;
-    finishedAtSeconds: number | undefined;
-    failure: string | undefined;
 }
 
 export interface GuardStatus {
@@ -63,7 +53,21 @@ export interface GuardStatus {
     allSessions: GuardMode;
     // Whether a refused prompt is sent again after the reset; one setting for every session.
     resendBlocked: boolean;
-    statusLineSeenAtSeconds: number | undefined;
-    lastProbe: ProbeRecord | undefined;
+    reportedAtSeconds: number | undefined;
     gauges: WindowGauge[];
 }
+
+// A refused prompt waiting to be sent again in the session that typed it, once its window has reset.
+export interface PendingResend {
+    sessionId: string;
+    text: string;
+    atSeconds: number;
+}
+
+export enum ResendResult {
+    Scheduled = 'scheduled',
+    AlreadyScheduled = 'already-scheduled',
+    LimitReached = 'limit-reached',
+}
+
+export type ResendOutcome = { result: ResendResult.Scheduled | ResendResult.AlreadyScheduled; atSeconds: number } | { result: ResendResult.LimitReached };
